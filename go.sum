@@ -1,4 +1,6 @@
 github.com/ebitengine/purego v0.11.0 h1:jhp/D+Nyv7UUW8HAcmcjt2N2rYrYi9m3SL21k0Ua/NI=
 github.com/ebitengine/purego v0.11.0/go.mod h1:DCHPP08djqhNSoTfImcnHYQRZmd0qhakvrozqaEYhGQ=
+github.com/go-authn/fido v0.1.1 h1:li+rfHazxxWaudRw57lt7r4UrkN7lhCzgfsS9yO25zI=
+github.com/go-authn/fido v0.1.1/go.mod h1:rXfsi9Y9Oqmvo1JbOUo0WM9pTYRorRf7IxtpE/J5SR0=
 github.com/go-macos/iokit v0.4.0 h1:shy8jW1Q+Nqs2QFJby5DrLoAzs4flyJEL+55ZNQqnW0=
 github.com/go-macos/iokit v0.4.0/go.mod h1:wH6UchjE6k8iCtouJcF+WggCgFpn9GQtzBpQtEcCLUY=

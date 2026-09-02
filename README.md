@@ -1,54 +1,34 @@
 # fido
 
-Talks to a FIDO security key over USB HID, in pure Go with `CGO_ENABLED=0`.
+Opens a FIDO security key on macOS and hands it to
+[go-authn/fido](https://github.com/go-authn/fido) as a transport. Pure Go,
+`CGO_ENABLED=0`.
 
 ```go
-k, err := fido.Open(ctx)      // finds the key, opens it, negotiates a channel
+k, err := fido.Open(ctx)   // find the key, open it, handshake
 defer k.Close()
-fmt.Println(k)                // YubiKey FIDO (CTAPHID v2, firmware 5.7.4, wink, ctap2, ctap1)
-err = k.Wink(ctx)             // the key blinks: which one is this?
+fmt.Println(k)             // YubiKey FIDO (CTAPHID v2, firmware 5.7.4, wink, ctap2, ctap1)
+err = k.Wink(ctx)          // the key blinks: which one is this?
 ```
 
-It is the **second factor**. macOS already offers the first through
-[go-macos/localauthentication](https://github.com/go-macos/localauthentication)
-— Touch ID, a watch, the device passcode — and those answer *is the person at
-this machine the one who unlocked it?* A security key answers a different
-question: *is the thing they carry present, right now?* Multi-factor means
-asking both and getting two independent answers.
-
-## Why this exists
+**The protocol is not here.** Framing, the handshake, the commands and every
+command still to come are the same on every operating system and live in
+go-authn/fido. What is macOS about a security key is four calls to IOKit, which
+is what this is.
 
 A FIDO authenticator publishes a HID interface on usage page `0xF1D0` with
 64-byte reports. It opens with no entitlement and no user consent, so the whole
-path is reachable from Go — through
-[go-macos/iokit](https://github.com/go-macos/iokit)'s own IOKit binding, with
-no framework, no driver and no cgo.
+path is reachable through [go-macos/iokit](https://github.com/go-macos/iokit)'s
+own IOKit binding: no framework, no driver, no cgo.
 
-In pure Go, client-side, there was nothing to reuse. The reference
-implementation of the field is Yubico's own **libfido2**, written in C; its one
-serious Go binding wraps it through cgo and has not moved in ten months. The
-pure-Go candidates are small and young. So this reads libfido2 and the CTAP
-specification as **documentation**, and owns the code.
+## One reader, started once
 
-## What reading the reference caught
+A second `hid.Stream` opened on a device whose first was cancelled delivers
+nothing, silently — and the symptom is a key that answers the handshake and then
+never again. So one reader is started when the device is opened and never
+restarted.
 
-Two faults that testing against a key would not have found, because a key
-answers a short ping the same either way:
-
-- **`CTAPHID_KEEPALIVE` is not an answer.** A key waiting for a finger sends one
-  about every hundred milliseconds for as long as the person takes. A reader
-  that returns the first complete message hands back a status byte instead of
-  the reply — and does it early, so it looks like the key talking nonsense.
-- **The message limit is the framing's, not the length field's.** Two length
-  bytes would allow 65535; the framing reaches 7609, because past that the
-  sequence numbers run into the high bit and a key reads them as the start of a
-  new message.
-
-## What is here
-
-Enumeration, the CTAPHID handshake, channel negotiation, capabilities, ping and
-wink — with the framing portable, tested to 100% off macOS, and the transport
-behind a seam so a key that refuses, a key that stalls and a key that keeps
-saying it is busy can all be driven from a test.
-
-CBOR, `makeCredential`, `getAssertion` and `ClientPIN` are not here yet.
+It is registered on a run loop, so there is a moment between starting it and it
+being armed. Writing during that moment loses the reply: measured at one
+exchange in three. The wait is small and it is not optional — a test that
+removed it reproduced the fault immediately.

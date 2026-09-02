@@ -6,32 +6,19 @@
 
 package fido
 
-import "context"
+import (
+	"context"
+	"errors"
 
-// Key is not implemented off macOS. The framing above is portable and tested
-// everywhere; only the transport is not.
-type Key struct{}
+	authn "github.com/go-authn/fido"
+)
 
-// Name reports nothing.
-func (k *Key) Name() string { return "" }
+// ErrUnsupported is returned off macOS. The protocol is portable and lives in
+// go-authn/fido; only this transport is not.
+var ErrUnsupported = errors.New("fido: only macOS is implemented here; see go-authn/fido for the protocol")
 
-// Version reports nothing.
-func (k *Key) Version() Version { return Version{} }
-
-// Capabilities reports nothing.
-func (k *Key) Capabilities() Capabilities { return 0 }
-
-// Channel reports nothing.
-func (k *Key) Channel() uint32 { return 0 }
-
-// Close does nothing.
-func (k *Key) Close() error { return nil }
+// Transport reports [ErrUnsupported].
+func Transport() (authn.Transport, error) { return nil, ErrUnsupported }
 
 // Open reports [ErrUnsupported].
-func Open(context.Context) (*Key, error) { return nil, ErrUnsupported }
-
-// Ping reports [ErrUnsupported].
-func (k *Key) Ping(context.Context, []byte) ([]byte, error) { return nil, ErrUnsupported }
-
-// Wink reports [ErrUnsupported].
-func (k *Key) Wink(context.Context) error { return ErrUnsupported }
+func Open(context.Context) (*authn.Key, error) { return nil, ErrUnsupported }
