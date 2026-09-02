@@ -9,6 +9,7 @@ package fido
 import (
 	"context"
 	"fmt"
+	"time"
 
 	authn "github.com/go-authn/fido"
 	"github.com/go-macos/iokit/hid"
@@ -34,6 +35,12 @@ var (
 		return hid.Stream(ctx, fn, d)
 	}
 )
+
+// readerArmDelay is how long to wait after starting the reader before writing
+// to the device. It is a package var so a test does not pay the whole of it.
+var readerArmDelay = 80 * time.Millisecond
+
+func waitForReader() { time.Sleep(readerArmDelay) }
 
 // transport carries CTAPHID reports over IOKit.
 type transport struct {

@@ -21,16 +21,7 @@
 //	fmt.Println(k)
 package fido
 
-import (
-	"errors"
-	"time"
-)
+import "errors"
 
 // ErrNoKey means no FIDO authenticator is attached.
 var ErrNoKey = errors.New("fido: no security key is attached")
-
-// readerArmDelay is how long to wait after starting the reader before writing.
-// It is a package var so a test does not pay it.
-var readerArmDelay = 80 * time.Millisecond
-
-func waitForReader() { time.Sleep(readerArmDelay) }
