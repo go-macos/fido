@@ -1,0 +1,4 @@
+github.com/ebitengine/purego v0.11.0 h1:jhp/D+Nyv7UUW8HAcmcjt2N2rYrYi9m3SL21k0Ua/NI=
+github.com/ebitengine/purego v0.11.0/go.mod h1:DCHPP08djqhNSoTfImcnHYQRZmd0qhakvrozqaEYhGQ=
+github.com/go-macos/iokit v0.4.0 h1:shy8jW1Q+Nqs2QFJby5DrLoAzs4flyJEL+55ZNQqnW0=
+github.com/go-macos/iokit v0.4.0/go.mod h1:wH6UchjE6k8iCtouJcF+WggCgFpn9GQtzBpQtEcCLUY=
