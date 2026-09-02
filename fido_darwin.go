@@ -46,6 +46,12 @@ type transport struct {
 	// again.
 	reports chan []byte
 	stop    context.CancelFunc
+	// done is closed when the reader has RETURNED, which is not the same as
+	// having been cancelled. Closing the device while the reader is still
+	// inside IOKit, holding the reference, is a use-after-free: it jumps into
+	// freed memory and the crash names a code address rather than anything
+	// recognisable. Found by -race with a key attached.
+	done chan struct{}
 }
 
 // Name is what the key calls itself.
@@ -69,6 +75,8 @@ func (t *transport) Close() error {
 	if t.stop != nil {
 		t.stop()
 		t.stop = nil
+		// Wait for the reader to be OUT of IOKit before the device goes.
+		<-t.done
 	}
 	if t.dev == nil {
 		return nil
@@ -110,8 +118,10 @@ func Transport() (authn.Transport, error) {
 		name:    dev.Info().Product,
 		reports: make(chan []byte, 32),
 		stop:    stop,
+		done:    make(chan struct{}),
 	}
 	go func() {
+		defer close(t.done)
 		_ = readAll(ctx, func(_ *hid.Device, b []byte) {
 			c := make([]byte, len(b))
 			copy(c, b)

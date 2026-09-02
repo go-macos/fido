@@ -11,6 +11,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -36,9 +38,14 @@ type fakes struct {
 	enumErr error
 	openErr error
 	sendErr error
-	sent    [][]byte
-	feed    func([]byte)
-	reply   func([]byte) [][]byte
+
+	// mu guards feed and sent. The reader runs on its own goroutine, exactly
+	// as the real one does, so the fake has the same sharing to get right --
+	// and -race caught it here before any of it reached hardware.
+	mu    sync.Mutex
+	sent  [][]byte
+	feed  func([]byte)
+	reply func([]byte) [][]byte
 }
 
 func install(t *testing.T, f *fakes) {
@@ -50,7 +57,9 @@ func install(t *testing.T, f *fakes) {
 	enumerate = func() ([]*hid.Device, error) { return f.devices, f.enumErr }
 	openDevice = func(*hid.Device) error { return f.openErr }
 	readAll = func(ctx context.Context, fn func(*hid.Device, []byte), _ *hid.Device) error {
+		f.mu.Lock()
 		f.feed = func(b []byte) { fn(nil, b) }
+		f.mu.Unlock()
 		<-ctx.Done()
 		return ctx.Err()
 	}
@@ -58,10 +67,13 @@ func install(t *testing.T, f *fakes) {
 		if f.sendErr != nil {
 			return f.sendErr
 		}
+		f.mu.Lock()
 		f.sent = append(f.sent, append([]byte(nil), b...))
-		if f.reply != nil && f.feed != nil {
-			for _, r := range f.reply(b) {
-				go func(r []byte) { f.feed(r) }(r)
+		feed, reply := f.feed, f.reply
+		f.mu.Unlock()
+		if reply != nil && feed != nil {
+			for _, r := range reply(b) {
+				go func(r []byte) { feed(r) }(r)
 			}
 		}
 		return nil
@@ -81,14 +93,16 @@ func TestTransportSaysWhenThereIsNoKey(t *testing.T) {
 func TestTransportReportsWhatWentWrong(t *testing.T) {
 	for _, c := range []struct {
 		name string
-		f    fakes
+		make func() *fakes
 		want string
 	}{
-		{"the enumeration failed", fakes{enumErr: errors.New("boom")}, "look for"},
-		{"the key would not open", fakes{devices: []*hid.Device{{}}, openErr: errors.New("busy")}, "cannot open"},
+		{"the enumeration failed", func() *fakes { return &fakes{enumErr: errors.New("boom")} }, "look for"},
+		{"the key would not open", func() *fakes {
+			return &fakes{devices: []*hid.Device{{}}, openErr: errors.New("busy")}
+		}, "cannot open"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			install(t, &c.f)
+			install(t, c.make())
 			if _, err := Transport(); err == nil {
 				t.Fatal("Transport succeeded")
 			} else if !strings.Contains(err.Error(), c.want) {
@@ -200,5 +214,39 @@ func TestARealKeyIfOneIsAttached(t *testing.T) {
 	}
 	if string(echo) != string(msg) {
 		t.Errorf("the key echoed %q, not %q", echo, msg)
+	}
+}
+
+// TestCloseWaitsForTheReaderToLeaveIOKit. Cancelling the reader is not the
+// same as it having returned: it may still be inside IOKit holding the device
+// reference, and closing the device under it is a use-after-free. The crash
+// names a code address and nothing else, and it only appears with a real key
+// attached under -race -- which is how it was found.
+func TestCloseWaitsForTheReaderToLeaveIOKit(t *testing.T) {
+	shortWait(t)
+	oe, oo, os_, or := enumerate, openDevice, setReport, readAll
+	t.Cleanup(func() { enumerate, openDevice, setReport, readAll = oe, oo, os_, or })
+
+	var left atomic.Bool
+	enumerate = func() ([]*hid.Device, error) { return []*hid.Device{{}}, nil }
+	openDevice = func(*hid.Device) error { return nil }
+	setReport = func(*hid.Device, []byte) error { return nil }
+	readAll = func(ctx context.Context, _ func(*hid.Device, []byte), _ *hid.Device) error {
+		<-ctx.Done()
+		// The reader is on its way out but not out yet -- exactly the window
+		// the fault lives in.
+		time.Sleep(60 * time.Millisecond)
+		left.Store(true)
+		return ctx.Err()
+	}
+	tr, err := Transport()
+	if err != nil {
+		t.Fatalf("Transport: %v", err)
+	}
+	if err := tr.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if !left.Load() {
+		t.Error("Close returned while the reader was still inside IOKit, which is the use-after-free")
 	}
 }
