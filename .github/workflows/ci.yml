@@ -69,8 +69,13 @@ jobs:
           go-version-file: go.mod
       - name: Vet
         run: go vet ./...
+      - name: Build everything
+        run: go build ./...
+      # The gate is over the LIBRARY. A command's main() is not covered by
+      # tests and testing it would mean testing flag parsing, so counting it
+      # would push the gate to something nobody should write.
       - name: Test
-        run: go test -coverprofile=cover.out ./...
+        run: go test -coverprofile=cover.out .
       - name: 100% coverage gate on everything that exists off darwin
         run: |
           go tool cover -func=cover.out | tee full.txt
