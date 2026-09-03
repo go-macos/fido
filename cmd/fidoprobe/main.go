@@ -42,6 +42,14 @@ func main() {
 	}
 	fmt.Printf("ping      %d byte(s) echoed exactly\n", len(echo))
 
+	info, err := k.GetInfo(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "fidoprobe: getinfo: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("info      %s\n", info)
+	fmt.Printf("aaguid    %x\n", info.AAGUID)
+
 	if *wink {
 		if err := k.Wink(ctx); err != nil {
 			fmt.Fprintf(os.Stderr, "fidoprobe: wink: %v\n", err)
