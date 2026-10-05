@@ -4,7 +4,7 @@ go 1.27.1
 
 require (
 	github.com/go-authn/fido v0.6.0
-	github.com/go-macos/iokit v0.13.1
+	github.com/go-macos/iokit v0.14.0
 )
 
 require (

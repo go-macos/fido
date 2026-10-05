@@ -4,7 +4,7 @@ github.com/fxamacker/cbor/v2 v2.9.4 h1:xwjVlxEMR3S605oUlgBjKLTTeGFciYPGYCtF/35LK
 github.com/fxamacker/cbor/v2 v2.9.4/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
 github.com/go-authn/fido v0.6.0 h1:qdrpx7NtyHAuF7uiYDw22obcHeF0ZjlIlR0K1s1G2PY=
 github.com/go-authn/fido v0.6.0/go.mod h1:W92gyfbs3S8rPBpbT8vFOZqQBoL00Y1k+bjqwLp2Srw=
-github.com/go-macos/iokit v0.13.1 h1:xvEjjtKfuMrMAAks5ucnniX0aPMHRF+g4BvGP3tniC8=
-github.com/go-macos/iokit v0.13.1/go.mod h1:XOxF+LKHfWHM1gqNi7el/AlAmv7DnhsMLMN78ReDKwo=
+github.com/go-macos/iokit v0.14.0 h1:TVwBDbHSvCoJ+LgLQODLcTAJmwebDmf0bZ9LDsOvXZ0=
+github.com/go-macos/iokit v0.14.0/go.mod h1:mICeLNCQgXiQ5LOqhTD948UbTRqkoO0GdRn1hN9rnPc=
 github.com/x448/float16 v0.8.4 h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=
 github.com/x448/float16 v0.8.4/go.mod h1:14CWIYCyZA/cWjXOioeEpHeN/83MdbZDRQHoFcYsOfg=
