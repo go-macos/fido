@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -20,16 +21,69 @@ import (
 	authn "github.com/go-authn/fido"
 )
 
-// TestRealKeyHMACSecretAndUV is the test of hmac-secret, credProtect and
-// built-in user verification against a REAL authenticator. It runs only with
+// minRetries is the fewest PIN attempts the real-key test will go on with: it
+// stops BEFORE the count falls below it, so a mistake never locks the key.
+const minRetries = 3
+
+// readPINFile reads the FIDO2 PIN the real-key test uses from a file the user
+// created. The PIN is never taken from an argument or an environment variable
+// (both are visible to other processes), and a file other users can read is
+// refused: that is the check a shell's umask would silently skip.
+func readPINFile(path string) (string, error) {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return "", err
+	}
+	if !fi.Mode().IsRegular() {
+		return "", fmt.Errorf("%s is not a regular file", path)
+	}
+	if fi.Mode().Perm()&0o077 != 0 {
+		return "", fmt.Errorf("%s has mode %04o; it must be 0600 or stricter (chmod 600)", path, fi.Mode().Perm())
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	pin := strings.TrimRight(string(b), "\r\n")
+	if pin == "" {
+		return "", fmt.Errorf("%s holds no PIN", path)
+	}
+	return pin, nil
+}
+
+// pinFilePath is where the PIN file is: $FIDO_PIN_FILE (the PATH, never the PIN)
+// or ~/.config/fido-test/pin.
+func pinFilePath() (string, error) {
+	if p := os.Getenv("FIDO_PIN_FILE"); p != "" {
+		return p, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config", "fido-test", "pin"), nil
+}
+
+// TestRealKeyHMACSecretAndUV is the test of hmac-secret, credProtect and user
+// verification against a REAL authenticator. It runs only with
 //
 //	FIDO_REAL=1 go test -run TestRealKeyHMACSecretAndUV -v
 //
-// because it needs a person: a key with a fingerprint sensor (a YubiKey Bio) and
-// a finger enrolled on it. Each time the key must verify the person this prints
-// one line, "Touch the YubiKey fingerprint sensor now (30 s)", and waits that
-// long. A wait that runs out is reported as NOT RUN, not as a failure: nobody
-// being there says nothing about the code.
+// because it needs a person. It has two modes, chosen from GetInfo:
+//
+//   - the key declares built-in user verification ("uv", a YubiKey Bio with a
+//     finger enrolled): tokens come from getPinUvAuthTokenUsingUvWithPermissions
+//     and each prompts "Touch the YubiKey fingerprint sensor now (30 s)";
+//   - it does not (a touch-only YubiKey): tokens come from the PIN, read from
+//     the file named by FIDO_PIN_FILE (default ~/.config/fido-test/pin, mode
+//     0600 or the file is refused), and each prompt is "Touch the YubiKey now
+//     (30 s)".
+//
+// The PIN is never in argv, the environment or a log, and PIN attempts are
+// counted with getPINRetries before each use: the test stops before the count
+// would fall below three, so it cannot lock the key. A wait that runs out is
+// reported as NOT RUN, not as a failure: nobody being there says nothing about
+// the code.
 //
 // It checks the two traps that make a disk unlock silently wrong:
 //
@@ -41,7 +95,7 @@ import (
 // logs lengths and equalities, never a secret.
 func TestRealKeyHMACSecretAndUV(t *testing.T) {
 	if os.Getenv("FIDO_REAL") != "1" {
-		t.Skip("NOT RUN: set FIDO_REAL=1 with a fingerprint key attached")
+		t.Skip("NOT RUN: set FIDO_REAL=1 with a key attached")
 	}
 	const rp = "go-macos-fido-realtest.invalid"
 	cdh := sha256.Sum256([]byte("go-macos/fido real key test"))
@@ -67,8 +121,8 @@ func TestRealKeyHMACSecretAndUV(t *testing.T) {
 			t.Skipf("NOT RUN: this authenticator does not list the %s extension", want)
 		}
 	}
-	if !info.Has("uv") || !info.Has("pinUvAuthToken") {
-		t.Skip("NOT RUN: this authenticator has no enrolled built-in user verification (options uv, pinUvAuthToken)")
+	if !info.Has("pinUvAuthToken") {
+		t.Skip("NOT RUN: this authenticator does not list pinUvAuthToken")
 	}
 	proto := authn.PINProtocolOne
 	for _, p := range info.PINProtocols {
@@ -76,24 +130,62 @@ func TestRealKeyHMACSecretAndUV(t *testing.T) {
 			proto = authn.PINProtocolTwo
 		}
 	}
-	t.Logf("using %s", proto)
+
+	bio := info.Has("uv")
+	touch := "Touch the YubiKey now (30 s)"
+	var pin string
+	if bio {
+		touch = "Touch the YubiKey fingerprint sensor now (30 s)"
+		t.Logf("mode: built-in user verification, using %s", proto)
+	} else {
+		if !info.Has("clientPin") {
+			t.Skip("NOT RUN: no FIDO2 PIN is set on this key and it has no built-in verification; set one first")
+		}
+		path, err := pinFilePath()
+		if err != nil {
+			t.Fatalf("where the PIN file is: %v", err)
+		}
+		if pin, err = readPINFile(path); err != nil {
+			t.Skipf("NOT RUN: the PIN file: %v", err)
+		}
+		t.Logf("mode: PIN (%d characters, read from a file) and touch, using %s", len([]rune(pin)), proto)
+	}
 
 	step := 0
 	// finger runs f with a 30 s bound, after the one line a person reads.
 	finger := func(what string, f func(ctx context.Context) error) error {
 		step++
-		fmt.Fprintf(os.Stderr, "\n[step %d] %s\nTouch the YubiKey fingerprint sensor now (30 s)\n", step, what)
+		fmt.Fprintf(os.Stderr, "\n[step %d] %s\n%s\n", step, what, touch)
 		c, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		return f(c)
 	}
 	notRun := func(err error) {
 		if errors.Is(err, context.DeadlineExceeded) {
-			t.Skipf("NOT RUN: nobody touched the sensor in time at step %d (%v)", step, err)
+			t.Skipf("NOT RUN: nobody touched the key in time at step %d (%v)", step, err)
 		}
 	}
-	uvToken := func(what string, perms authn.Permissions) authn.Token {
+	token := func(what string, perms authn.Permissions) authn.Token {
 		t.Helper()
+		if !bio {
+			// Count first, and stop before the key could be locked.
+			c, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			r, err := k.PINRetries(c)
+			if err != nil {
+				t.Fatalf("PIN retries: %v", err)
+			}
+			t.Logf("PIN retries left: %d", r.PIN)
+			if r.PIN < minRetries || r.PowerCycle {
+				t.Fatalf("STOPPED: %d PIN retries left (power-cycle needed: %v); refusing to go below %d. Check the PIN file, then run again",
+					r.PIN, r.PowerCycle, minRetries)
+			}
+			tok, err := k.PINToken(c, pin, proto, perms, rp)
+			if err != nil {
+				t.Fatalf("PIN token for %s: %v", what, err)
+			}
+			return tok
+		}
 		var tok authn.Token
 		err := finger(what, func(c context.Context) (err error) {
 			tok, err = k.UVToken(c, proto, perms, rp)
@@ -107,7 +199,7 @@ func TestRealKeyHMACSecretAndUV(t *testing.T) {
 	}
 	register := func(what string, ext authn.Extensions) *authn.Attestation {
 		t.Helper()
-		tok := uvToken("verify to register: "+what, authn.PermMakeCredential)
+		tok := token("verify to register: "+what, authn.PermMakeCredential)
 		var att *authn.Attestation
 		err := finger("confirm the registration: "+what, func(c context.Context) (err error) {
 			att, err = k.MakeCredential(c, authn.MakeCredentialRequest{
@@ -161,7 +253,7 @@ func TestRealKeyHMACSecretAndUV(t *testing.T) {
 	// each time because a getAssertion permission is spent by use.
 	var first, second []byte
 	for i := 0; i < 2; i++ {
-		tok := uvToken(fmt.Sprintf("verify to unlock (%d of 2)", i+1), authn.PermGetAssertion)
+		tok := token(fmt.Sprintf("verify to unlock (%d of 2)", i+1), authn.PermGetAssertion)
 		var out *authn.Assertion
 		err := finger("confirm the assertion", func(context.Context) (err error) {
 			out, err = assert(a.Parsed.CredentialID, tok, &authn.HMACSecret{Protocol: proto, Salt1: salt[:], RequireUV: true}, nil)
@@ -196,37 +288,37 @@ func TestRealKeyHMACSecretAndUV(t *testing.T) {
 	notRun(err)
 	if err != nil {
 		t.Logf("trap 1 NOT CHECKED: the key refuses an unverified assertion (%v)", err)
-	} else {
-		tok := uvToken("verify to unlock", authn.PermGetAssertion)
-		var verified *authn.Assertion
-		err := finger("confirm the verified assertion", func(context.Context) (err error) {
-			verified, err = assert(b.Parsed.CredentialID, tok, &authn.HMACSecret{Protocol: proto, Salt1: salt[:], RequireUV: true}, nil)
-			return err
-		})
-		notRun(err)
-		if err != nil {
-			t.Fatalf("verified assertion: %v", err)
-		}
-		t.Logf("trap 1: unverified request UV=%v, verified request UV=%v, secrets equal: %v",
-			plain.Parsed.Flags.Has(authn.FlagUV), verified.Parsed.Flags.Has(authn.FlagUV),
-			bytes.Equal(plain.HMACSecret.First, verified.HMACSecret.First))
-		if plain.Parsed.Flags.Has(authn.FlagUV) {
-			t.Log("the unverified request was verified by the key itself (the touch matched a finger), so the two secrets are the same kind")
-		} else if bytes.Equal(plain.HMACSecret.First, verified.HMACSecret.First) {
-			t.Error("trap 1: verified and unverified requests gave the SAME secret")
-		}
-		// RequireUV refuses to hand over the unverified one.
-		if !plain.Parsed.Flags.Has(authn.FlagUV) {
-			s := &authn.HMACSecret{Protocol: proto, Salt1: salt[:], RequireUV: true}
-			_ = finger("unverified assertion with RequireUV", func(context.Context) error {
-				got, err := assert(b.Parsed.CredentialID, authn.Token{}, s, nil)
-				if !errors.Is(err, authn.ErrHMACSecretNotVerified) || got != nil {
-					t.Errorf("RequireUV on an unverified assertion: %v", err)
-				}
-				return nil
-			})
-		}
+		return
 	}
+	tok := token("verify to unlock", authn.PermGetAssertion)
+	var verified *authn.Assertion
+	err = finger("confirm the verified assertion", func(context.Context) (err error) {
+		verified, err = assert(b.Parsed.CredentialID, tok, &authn.HMACSecret{Protocol: proto, Salt1: salt[:], RequireUV: true}, nil)
+		return err
+	})
+	notRun(err)
+	if err != nil {
+		t.Fatalf("verified assertion: %v", err)
+	}
+	t.Logf("trap 1: unverified request UV=%v, verified request UV=%v, secrets equal: %v",
+		plain.Parsed.Flags.Has(authn.FlagUV), verified.Parsed.Flags.Has(authn.FlagUV),
+		bytes.Equal(plain.HMACSecret.First, verified.HMACSecret.First))
+	if plain.Parsed.Flags.Has(authn.FlagUV) {
+		t.Log("the unverified request was verified by the key itself, so the two secrets are the same kind")
+		return
+	}
+	if bytes.Equal(plain.HMACSecret.First, verified.HMACSecret.First) {
+		t.Error("trap 1: verified and unverified requests gave the SAME secret")
+	}
+	// RequireUV refuses to hand over the unverified one.
+	s := &authn.HMACSecret{Protocol: proto, Salt1: salt[:], RequireUV: true}
+	_ = finger("unverified assertion with RequireUV", func(context.Context) error {
+		got, err := assert(b.Parsed.CredentialID, authn.Token{}, s, nil)
+		if !errors.Is(err, authn.ErrHMACSecretNotVerified) || got != nil {
+			t.Errorf("RequireUV on an unverified assertion: %v", err)
+		}
+		return nil
+	})
 }
 
 func contains(list []string, s string) bool {
