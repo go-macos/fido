@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -35,6 +36,12 @@ import (
 //
 // Gestures: 2 registrations, 1 walk, 1 targeted check = 4 touches.
 // It logs counts, presence and equalities, never a secret.
+//
+// Measured 2026-11-16 on a YubiKey 5 (firmware 5.7.4, PIN mode): two
+// credentials announced, both assertions of ONE walk (one touch) carry the
+// hmac-secret output, and the next assertion's output equals a direct
+// assertion of that credential. An authenticator with a display may behave
+// otherwise (§6.2.2 step 12: the person picks one).
 func TestRealKeyDiscoverableNextAssertion(t *testing.T) {
 	if os.Getenv("FIDO_REAL") != "1" {
 		t.Skip("NOT RUN: set FIDO_REAL=1 with a key attached")
@@ -91,7 +98,10 @@ func TestRealKeyDiscoverableNextAssertion(t *testing.T) {
 		return f(c)
 	}
 	notRun := func(err error) {
-		if errors.Is(err, context.DeadlineExceeded) {
+		// A YubiKey answers CTAP2_ERR_OPERATION_DENIED (0x27) when nobody
+		// touches it in time, before our own 30 s context runs out (measured
+		// 2026-11-16: 29.03 s). Nobody being there says nothing about the code.
+		if errors.Is(err, context.DeadlineExceeded) || (err != nil && strings.Contains(err.Error(), "(0x27)")) {
 			t.Skipf("NOT RUN: nobody touched the key in time at step %d (%v)", step, err)
 		}
 	}
