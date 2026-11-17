@@ -9,6 +9,7 @@ package fido
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	authn "github.com/go-authn/fido"
@@ -103,6 +104,11 @@ func (t *transport) Close() error {
 //
 // [ErrNoKey] means none is attached, which is an ordinary state and not a
 // fault: a person can be asked to plug one in.
+//
+// ⛔ With more than one key attached this takes whichever IOKit lists first,
+// and that order is not promised. A program that changes anything on the key
+// (a PIN, a fingerprint, a credential) must use [Devices] and [OpenDevice], so
+// that the key acted on is one a person chose and was shown.
 func Transport() (authn.Transport, error) {
 	devs, err := enumerate()
 	if err != nil {
@@ -111,18 +117,75 @@ func Transport() (authn.Transport, error) {
 	if len(devs) == 0 {
 		return nil, ErrNoKey
 	}
-	dev := devs[0]
 	for _, extra := range devs[1:] {
 		extra.Close()
 	}
+	return start(devs[0])
+}
+
+// infoOf reads a device's description; a seam, because a test cannot build a
+// hid.Device with a description.
+var infoOf = func(d *hid.Device) hid.Info { return d.Info() }
+
+func describe(h *hid.Device) Device {
+	i := infoOf(h)
+	return Device{
+		Path: pathOf(i.LocationID), LocationID: i.LocationID,
+		VendorID: i.VendorID, ProductID: i.ProductID,
+		Name: i.Product, Manufacturer: i.Manufacturer, Serial: i.SerialNumber,
+	}
+}
+
+// Devices lists the attached security keys without opening any of them, in a
+// stable order (by Path). It asks nothing of the keys, so it needs no touch.
+// An empty list is not an error.
+func Devices() ([]Device, error) {
+	hs, err := enumerate()
+	if err != nil {
+		return nil, fmt.Errorf("fido: cannot look for a security key: %w", err)
+	}
+	out := make([]Device, 0, len(hs))
+	for _, h := range hs {
+		out = append(out, describe(h))
+		h.Close()
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out, nil
+}
+
+// OpenDevice opens the key d describes, matched by Path (and by Serial when d
+// has one), and returns it as a transport. A key that has gone, or whose place
+// another took, is [ErrGone]: never a different key opened in its stead.
+func OpenDevice(d Device) (authn.Transport, error) {
+	hs, err := enumerate()
+	if err != nil {
+		return nil, fmt.Errorf("fido: cannot look for a security key: %w", err)
+	}
+	var found *hid.Device
+	for _, h := range hs {
+		c := describe(h)
+		if found == nil && c.Path == d.Path && (d.Serial == "" || c.Serial == d.Serial) {
+			found = h
+			continue
+		}
+		h.Close()
+	}
+	if found == nil {
+		return nil, fmt.Errorf("%w: %s", ErrGone, d.Path)
+	}
+	return start(found)
+}
+
+// start opens dev and begins reading it.
+func start(dev *hid.Device) (authn.Transport, error) {
 	if err := openDevice(dev); err != nil {
 		dev.Close()
-		return nil, fmt.Errorf("fido: cannot open %s: %w", dev.Info().Product, err)
+		return nil, fmt.Errorf("fido: cannot open %s: %w", infoOf(dev).Product, err)
 	}
 	ctx, stop := context.WithCancel(context.Background())
 	t := &transport{
 		dev:     dev,
-		name:    dev.Info().Product,
+		name:    infoOf(dev).Product,
 		reports: make(chan []byte, 32),
 		stop:    stop,
 		done:    make(chan struct{}),

@@ -20,5 +20,11 @@ var ErrUnsupported = errors.New("fido: only macOS is implemented here; see go-au
 // Transport reports [ErrUnsupported].
 func Transport() (authn.Transport, error) { return nil, ErrUnsupported }
 
+// Devices reports [ErrUnsupported].
+func Devices() ([]Device, error) { return nil, ErrUnsupported }
+
+// OpenDevice reports [ErrUnsupported].
+func OpenDevice(Device) (authn.Transport, error) { return nil, ErrUnsupported }
+
 // Open reports [ErrUnsupported].
 func Open(context.Context) (*authn.Key, error) { return nil, ErrUnsupported }

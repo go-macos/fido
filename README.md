@@ -21,6 +21,25 @@ A FIDO authenticator publishes a HID interface on usage page `0xF1D0` with
 path is reachable through [go-macos/iokit](https://github.com/go-macos/iokit)'s
 own IOKit binding: no framework, no driver, no cgo.
 
+## Several keys: list, then choose
+
+`Open` and `Transport` take whichever key IOKit lists first, and that order is
+not promised. Anything that changes a key (a PIN, a fingerprint, a credential)
+must choose it:
+
+```go
+devs, _ := fido.Devices()          // no key is opened, nothing is touched
+for _, d := range devs { fmt.Println(d) }   // YubiKey Bio (1050:0407) at iokit:14100000
+t, err := fido.OpenDevice(devs[i]) // matched by Path (and Serial), never by position
+k, err := authn.Open(ctx, t)
+```
+
+`Device` has the same shape as go-gnulinux/fido's. `Path` is built from the USB
+location, so it is stable while the key stays in the same port; a key that was
+unplugged, or whose port another key took, is `ErrGone`, never a different key
+opened in its stead. `Serial` is empty for the many keys that publish none:
+`go-authn/fido` can tell keys apart by touch ([Select]) or by what they answer.
+
 ## One reader, started once
 
 A second `hid.Stream` opened on a device whose first was cancelled delivers

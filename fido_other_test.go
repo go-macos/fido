@@ -21,6 +21,12 @@ func TestEveryCallRefusesOffMacOS(t *testing.T) {
 	if _, err := Open(context.Background()); !errors.Is(err, ErrUnsupported) {
 		t.Errorf("Open = %v, want ErrUnsupported", err)
 	}
+	if _, err := Devices(); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("Devices = %v, want ErrUnsupported", err)
+	}
+	if _, err := OpenDevice(Device{}); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("OpenDevice = %v, want ErrUnsupported", err)
+	}
 	if !errors.Is(ErrUnsupported, ErrUnsupported) || len(ErrUnsupported.Error()) == 0 {
 		t.Error("the error says nothing")
 	}
