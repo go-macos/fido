@@ -2,8 +2,8 @@ github.com/ebitengine/purego v0.11.1 h1:2zpWRSQNVKN4eKsKO9eM1ILDgWfYMY9GwqRmK6Xe
 github.com/ebitengine/purego v0.11.1/go.mod h1:DCHPP08djqhNSoTfImcnHYQRZmd0qhakvrozqaEYhGQ=
 github.com/fxamacker/cbor/v2 v2.10.0 h1:HVF3T5vYwLqO81ebPirWEPNv2SMrUMD3HLnKgEr6uWE=
 github.com/fxamacker/cbor/v2 v2.10.0/go.mod h1:uSwlToFuT9BZAKRxxVm3qQC8DR4tlWl7D6pf20iRYH4=
-github.com/go-authn/fido v0.8.0 h1:iYGe5lwK21QbEdH48b7K4k39MeGLzpm4D6zFfvsjEnc=
-github.com/go-authn/fido v0.8.0/go.mod h1:EnseUqvvwzHnj7W6occN/5ySFfofWdJHJqcE2UHDDaA=
+github.com/go-authn/fido v0.13.1 h1:W8ADrdH6D2M060k+YsJDsoESFuRUUPyTJfWOHh47CZI=
+github.com/go-authn/fido v0.13.1/go.mod h1:EnseUqvvwzHnj7W6occN/5ySFfofWdJHJqcE2UHDDaA=
 github.com/go-macos/iokit v0.14.0 h1:TVwBDbHSvCoJ+LgLQODLcTAJmwebDmf0bZ9LDsOvXZ0=
 github.com/go-macos/iokit v0.14.0/go.mod h1:mICeLNCQgXiQ5LOqhTD948UbTRqkoO0GdRn1hN9rnPc=
 github.com/x448/float16 v0.8.4 h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=
