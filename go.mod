@@ -1,9 +1,9 @@
 module github.com/go-macos/fido
 
-go 1.27.3
+go 1.27.4
 
 require (
-	github.com/go-authn/fido v0.13.1
+	github.com/go-authn/fido v0.15.0
 	github.com/go-macos/iokit v0.14.0
 )
 
